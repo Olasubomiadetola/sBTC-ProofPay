@@ -84,3 +84,115 @@
     )
   )
 )
+
+
+;; Release funds to recipient
+(define-public (release-funds (transaction-id uint))
+  (begin
+    ;; Validate transaction ID
+    (asserts! (is-valid-transaction-id transaction-id) ERR-INVALID-TRANSACTION-ID)
+
+    (let 
+      (
+        (transaction (unwrap! 
+          (map-get? transactions { id: transaction-id }) 
+          ERR-TRANSACTION-NOT-FOUND
+        ))
+      )
+      ;; Validate sender authorization
+      (asserts! 
+        (is-eq tx-sender (get sender transaction)) 
+        ERR-UNAUTHORIZED
+      )
+
+      ;; Transfer STX
+      (try! (stx-transfer? 
+        (get amount transaction) 
+        tx-sender 
+        (get recipient transaction)
+      ))
+
+      ;; Update transaction status
+      (map-set transactions 
+        { id: transaction-id }
+        (merge transaction { status: "COMPLETED" })
+      )
+
+      (ok true)
+    )
+  )
+)
+
+;; Add reputation points
+(define-public (add-reputation-points 
+  (transaction-id uint) 
+  (points uint)
+)
+  (begin
+    ;; Validate transaction ID
+    (asserts! (is-valid-transaction-id transaction-id) ERR-INVALID-TRANSACTION-ID)
+
+    (let 
+      (
+        (transaction (unwrap! 
+          (map-get? transactions { id: transaction-id }) 
+          ERR-TRANSACTION-NOT-FOUND
+        ))
+        (sender (get sender transaction))
+        (recipient (get recipient transaction))
+      )
+      ;; Validate recipient authorization and points
+      (asserts! 
+        (is-eq tx-sender recipient) 
+        ERR-UNAUTHORIZED
+      )
+      (asserts! (> points u0) ERR-INVALID-POINTS)
+
+      ;; Update user reputation
+      (map-set user-reputation 
+        { user: sender }
+        {
+          total-points: (+ 
+            (get total-points 
+              (default-to 
+                { total-points: u0, total-transactions: u0 } 
+                (map-get? user-reputation { user: sender })
+              )
+            )
+            points
+          ),
+          total-transactions: (+ 
+            (get total-transactions 
+              (default-to 
+                { total-points: u0, total-transactions: u0 } 
+                (map-get? user-reputation { user: sender })
+              )
+            )
+            u1
+          )
+        }
+      )
+
+      ;; Update transaction reputation points
+      (map-set transactions 
+        { id: transaction-id }
+        (merge transaction { reputation-points: points })
+      )
+
+      (ok true)
+    )
+  )
+)
+
+;; Get user reputation
+(define-read-only (get-user-reputation (user principal))
+  (default-to 
+    { total-points: u0, total-transactions: u0 }
+    (map-get? user-reputation { user: user })
+  )
+)
+
+;; Get transaction details
+(define-read-only (get-transaction-details (transaction-id uint))
+  (map-get? transactions { id: transaction-id })
+)
